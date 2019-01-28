@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
 
         recyclerView.withModels {
 
-            for (i in 0 until 100) {
+            for (i in 0 until 10) {
                 dataBindingItem {
                     id("data binding $i")
                     text("this is a data binding model: $i")
@@ -112,16 +112,19 @@ class MainActivity : AppCompatActivity() {
                         log("View: ${it.view::class.java.simpleName} : ${it.branches}")
 //                        recyclerView.post { it.hierarchyExplorer.resumeFromLastView() }
                         true
+//                        false
                     },
                     onClickableView = {
                         log("Clickable view: ${it.view::class.java.simpleName} : ${it.branches}")
 //                        recyclerView.post { it.hierarchyExplorer.resumeFromLastView() }
                         true
+//                        false
                     },
                     onLongClickableView = {
                         log("Long clickable view: ${it.view::class.java.simpleName} : ${it.branches}")
 //                        recyclerView.post { it.hierarchyExplorer.resumeFromLastView() }
                         true
+//                        false
                     }
                 )
             ).start()

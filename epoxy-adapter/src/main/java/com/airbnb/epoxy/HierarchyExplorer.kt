@@ -115,8 +115,7 @@ class HierarchyExplorer(
     }
 
     private fun iterate(view: View): Boolean {
-        val resumingIndex: Int? = resumingChain.pollFirst()
-        val isResuming = resumingIndex != null
+        val isResuming = resumingChain.isNotEmpty()
 
         if (!isResuming) {
             actions
@@ -146,24 +145,16 @@ class HierarchyExplorer(
 
         // Processing view children
         if (view is RecyclerView) {
-            if (!iterateRecyclerView(
-                    recyclerView = view,
-                    startingPosition = resumingIndex ?: 0,
-                    isResuming = isResuming
-                )
-            ) {
+            if (!iterateRecyclerView(view)) {
                 return false
             }
         } else if (view is ViewGroup) {
-            resumingIndex?.let {
-                if (!iterate(view.getChildAt(it))) {
-                    return false
+            val resumingIndex = resumingChain.pollFirst()
+
+            for (index in (resumingIndex ?: 0) until view.childCount) {
+                if (resumingIndex != index) {
+                    branchChain.addLast(index)
                 }
-                branchChain.pollLast()
-            }
-            val nextIndex = (resumingIndex ?: -1) + 1
-            for (index in nextIndex until view.childCount) {
-                branchChain.addLast(index)
                 if (!iterate(view.getChildAt(index))) {
                     return false
                 }
@@ -187,23 +178,22 @@ class HierarchyExplorer(
     }
 
     private fun iterateRecyclerView(
-        recyclerView: RecyclerView,
-        startingPosition: Int = 0,
-        isResuming: Boolean = false
+        recyclerView: RecyclerView
     ): Boolean {
         val itemCount = recyclerView.adapter?.itemCount ?: return true
-        require(startingPosition < itemCount) { "Starting position ($startingPosition) is greater than item count ($itemCount)" }
 
-        (startingPosition until itemCount).forEach { targetItemIndex ->
-            val isResumingItem = isResuming && targetItemIndex == startingPosition
+        val resumingIndex = resumingChain.pollFirst()
+        ((resumingIndex ?: 0) until itemCount).forEach { targetItemIndex ->
+
+            if (resumingIndex != targetItemIndex) {
+                branchChain.addLast(targetItemIndex)
+            }
 
             recyclerView
                 .findViewHolderForAdapterPosition(targetItemIndex)
                 ?.itemView
                 ?.let {
-                    if (!isResumingItem) {
-                        branchChain.addLast(targetItemIndex)
-                    }
+
                     if (!iterate(it)) {
                         return false
                     }
