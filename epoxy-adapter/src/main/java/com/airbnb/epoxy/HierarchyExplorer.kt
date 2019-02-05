@@ -1,96 +1,44 @@
 package com.airbnb.epoxy
 
-import android.content.Context
-import android.os.Bundle
-import android.util.Log
 import android.view.View
 import android.view.ViewGroup
-import androidx.fragment.app.Fragment
-import androidx.fragment.app.FragmentActivity
-import androidx.fragment.app.FragmentManager
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleObserver
-import androidx.lifecycle.OnLifecycleEvent
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.util.LinkedList
 
-fun FragmentActivity.monitorFragments() {
-    fun Fragment.log(lifecycleCallback: String, fm: FragmentManager) {
-        val nestedFragment = fm != supportFragmentManager
-        println("Fragment event: name:${this::class.java.simpleName} callback:$lifecycleCallback nested:$nestedFragment")
-        // Return, revert fragment transaction, and continue iterating views
-    }
-
-    supportFragmentManager.registerFragmentLifecycleCallbacks(object :
-        FragmentManager.FragmentLifecycleCallbacks() {
-        override fun onFragmentAttached(fm: FragmentManager, f: Fragment, context: Context) {
-            f.log("Attached", fm)
-        }
-
-        override fun onFragmentCreated(
-            fm: FragmentManager,
-            f: Fragment,
-            savedInstanceState: Bundle?
-        ) {
-            f.log("Created", fm)
-        }
-
-        override fun onFragmentStarted(fm: FragmentManager, f: Fragment) {
-            f.log("Started", fm)
-        }
-
-        override fun onFragmentResumed(fm: FragmentManager, f: Fragment) {
-            f.log("Resumed", fm)
-        }
-
-        override fun onFragmentPaused(fm: FragmentManager, f: Fragment) {
-            f.log("Paused", fm)
-        }
-
-        override fun onFragmentStopped(fm: FragmentManager, f: Fragment) {
-            f.log("Stopped", fm)
-        }
-
-        override fun onFragmentDestroyed(fm: FragmentManager, f: Fragment) {
-            f.log("Destroyed", fm)
-        }
-
-        override fun onFragmentViewDestroyed(fm: FragmentManager, f: Fragment) {
-            f.log("ViewDestroyed", fm)
-        }
-
-        override fun onFragmentDetached(fm: FragmentManager, f: Fragment) {
-            f.log("Detached", fm)
-        }
-    }, true)
-}
-
 class HierarchyExplorer(
-    val root: View,
-    val onEnd: () -> Unit,
-    viewCallback: ViewCallback
+    private val root: View,
+    private val onEnd: () -> Unit,
+    private val viewCallback: ViewCallback,
+    resumeFromState: State? = null
 ) {
     private val viewChain = mutableListOf<View>()
     private val branchChain = LinkedList<Int>()
     private val resumingChain = LinkedList<Int>()
 
     private class Action(
+        val id: Int,
         val callback: (ViewDetails) -> Boolean,
         val qualifier: (View) -> Boolean
     )
 
     private val actions = listOf(
-        Action(viewCallback.onView) { true },
-        Action(viewCallback.onClickableView) { it.isClickable },
-        Action(viewCallback.onLongClickableView) { it.isLongClickable }
+        Action(1, viewCallback.onView) { true },
+        Action(2, viewCallback.onClickableView) { it.isClickable },
+        Action(3, viewCallback.onLongClickableView) { it.isLongClickable }
     )
-    private val actionsTakenOnCurrentView = mutableSetOf<(ViewDetails) -> Boolean>()
+    private val actionsTakenOnCurrentView = mutableSetOf<Int>()
 
     open class ViewCallback(
         val onView: (view: ViewDetails) -> Boolean = { true },
         val onClickableView: (view: ViewDetails) -> Boolean = { true },
-        val onLongClickableView: (view: ViewDetails) -> Boolean = { true }
+        val onLongClickableView: (view: ViewDetails) -> Boolean = { true },
+        val onRecyclerViewScrolled: (recyclerView: RecyclerView, position: Int) -> Boolean = { _, _ -> true }
+    )
+
+    data class State(
+        val branchChain: List<Int>,
+        val actionsTakenOnCurrentView: Set<Int>
     )
 
     class ViewDetails(
@@ -100,19 +48,25 @@ class HierarchyExplorer(
         val branches: List<Int>
     )
 
-    // Could register fragment lifecycle observer to catch unexpected changes
-
-    // Register listener for logging and get logs on fragment start/end, and clicks
-
-    fun start() {
-        root.viewTreeObserver.addOnGlobalLayoutListener {
-            // unknown view change detected - screenshot? reset fragment state?
+    init {
+        resumeFromState?.let {
+            branchChain.addAll(it.branchChain)
+            actionsTakenOnCurrentView.addAll(it.actionsTakenOnCurrentView)
         }
+    }
 
-        (root.context as? FragmentActivity)?.lifecycle?.addObserver(ActivityLifeCycleObserver())
-
+    fun resume() {
+        viewChain.clear()
+        resumingChain.clear()
+        resumingChain.addAll(branchChain)
         iterate(root)
     }
+
+    val state: State
+        get() = State(
+            branchChain.toList(),
+            actionsTakenOnCurrentView.toSet()
+        )
 
     private fun iterate(view: View): Boolean {
         val isResuming = resumingChain.isNotEmpty()
@@ -120,12 +74,11 @@ class HierarchyExplorer(
         if (!isResuming) {
             actions
                 .filter { it.qualifier(view) }
-                .map { it.callback }
-                .filterNot { actionsTakenOnCurrentView.contains(it) }
-                .forEach { callback ->
-                    actionsTakenOnCurrentView.add(callback)
+                .filterNot { actionsTakenOnCurrentView.contains(it.id) }
+                .forEach { action ->
+                    actionsTakenOnCurrentView.add(action.id)
 
-                    if (!callback(
+                    if (!action.callback(
                             ViewDetails(
                                 this,
                                 view,
@@ -140,8 +93,9 @@ class HierarchyExplorer(
 
             // Finished processing actions on this view, moving on to children
             actionsTakenOnCurrentView.clear()
-            viewChain.add(view)
         }
+
+        viewChain.add(view)
 
         // Processing view children
         if (view is RecyclerView) {
@@ -166,15 +120,8 @@ class HierarchyExplorer(
         viewChain.remove(view)
         if (view == root) {
             onEnd()
-            //        TODO("remove layout listener")
         }
         return true
-    }
-
-    fun resumeFromLastView() {
-        resumingChain.clear()
-        resumingChain.addAll(branchChain)
-        iterate(root)
     }
 
     private fun iterateRecyclerView(
@@ -209,8 +156,10 @@ class HierarchyExplorer(
             )
                 ?: recyclerView.scrollToPosition(targetItemIndex)
 
-            recyclerView.post {
-                resumeFromLastView()
+            if (viewCallback.onRecyclerViewScrolled(recyclerView, targetItemIndex)) {
+                recyclerView.post {
+                    resume()
+                }
             }
 
             return false
@@ -218,19 +167,8 @@ class HierarchyExplorer(
 
         return true
     }
-
-    inner class ActivityLifeCycleObserver : LifecycleObserver {
-        @OnLifecycleEvent(Lifecycle.Event.ON_ANY)
-        fun onLifecycleEvent() {
-            // Error case, we must have missed something
-        }
-    }
 }
 
-// Fragment manager calls - could override activity's get fragmentmanager methods and return a wrapped fragment manager that tracks calls
-// That doesn't work for fragments, since those methods are final
-// Force all airbnb fragment calls to go through an object we provide?
-//
 
 // ViewModel method called - can we get the method name? maybe looking at the stacktrace when the new state is set
 // leads to new view model state we can intercept
@@ -247,7 +185,7 @@ class HierarchyExplorer(
 
 // Call random methods on fragment/activity like setting transition callback or listeners
 
-// Change toolbar theming, or touch views directly in other ways
+// Change toolbar theming, or touch views directly in other ways, play lottie animation, expand view, etc
 
 // Handled:
 // start activity - can override functions in activity, startActivity, startIntentSender, startActivityFromFragment

@@ -110,24 +110,24 @@ class MainActivity : AppCompatActivity() {
                 viewCallback = HierarchyExplorer.ViewCallback(
                     onView = {
                         log("View: ${it.view::class.java.simpleName} : ${it.branches}")
-//                        recyclerView.post { it.hierarchyExplorer.resumeFromLastView() }
+//                        recyclerView.post { it.hierarchyExplorer.resume() }
                         true
 //                        false
                     },
                     onClickableView = {
                         log("Clickable view: ${it.view::class.java.simpleName} : ${it.branches}")
-//                        recyclerView.post { it.hierarchyExplorer.resumeFromLastView() }
+//                        recyclerView.post { it.hierarchyExplorer.resume() }
                         true
 //                        false
                     },
                     onLongClickableView = {
                         log("Long clickable view: ${it.view::class.java.simpleName} : ${it.branches}")
-//                        recyclerView.post { it.hierarchyExplorer.resumeFromLastView() }
+//                        recyclerView.post { it.hierarchyExplorer.resume() }
                         true
 //                        false
                     }
                 )
-            ).start()
+            ).resume()
         }
     }
 
